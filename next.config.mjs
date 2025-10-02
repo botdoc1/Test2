@@ -8,7 +8,15 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
   },
+  reactStrictMode: true,
+  poweredByHeader: false,
 }
 
 export default nextConfig
