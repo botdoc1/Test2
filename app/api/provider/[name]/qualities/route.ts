@@ -17,12 +17,12 @@ function withTimeout<T>(p: Promise<T>, ms = 3000): Promise<T> {
   })
 }
 
-export async function GET(request: Request, { params }: { params: { name: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ name: string }> }) {
+  const { name } = await params
   const { searchParams } = new URL(request.url)
   const animeId = Number(searchParams.get('animeId'))
   const episode = Number(searchParams.get('episode'))
   const pageUrl = searchParams.get('pageUrl') || undefined
-  const name = params.name
 
   const cacheKey = `${name}::${animeId}::${episode}::${pageUrl || ''}`
   const cached = providerQualitiesCache.get(cacheKey)

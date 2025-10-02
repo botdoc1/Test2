@@ -1,32 +1,31 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { getDubProvider } from "@/lib/providers/index"
 
 const EPISODES_CACHE_TTL = 1000 * 60 * 5 // 5 минут
 const episodesCache = new Map<string, { ts: number; data: any }>()
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const { searchParams } = new URL(request.url)
-  const provider = (searchParams.get("provider") || "Anilibria").toString()
+  const providerName = (searchParams.get("provider") || "anidub").toLowerCase()
 
-  const cacheKey = `${id}::${provider}`
+  const cacheKey = `${id}::${providerName}`
   const cached = episodesCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < EPISODES_CACHE_TTL) {
     return NextResponse.json(cached.data)
   }
 
   try {
-    // В реальном приложении здесь был бы запрос к соответствующему API
-    const episodes = generateEpisodesForProvider(Number.parseInt(id), provider)
+    const provider = getDubProvider(providerName)
+    const episodes = await generateEpisodesForProvider(Number.parseInt(id), providerName, provider)
 
     const payload = {
       animeId: id,
-      provider,
+      provider: providerName,
       episodes,
     }
 
-    // Сохраняем результат в простом серверном кэше (in-memory)
     episodesCache.set(cacheKey, { ts: Date.now(), data: payload })
-
     return NextResponse.json(payload)
   } catch (error) {
     console.error("Error fetching episodes:", error)
@@ -34,11 +33,26 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-function generateEpisodesForProvider(animeId: number, provider: string) {
+async function generateEpisodesForProvider(animeId: number, providerName: string, provider: any) {
   const episodeCount = 24 // В реальности получали бы из API
   const episodes = []
 
   for (let i = 1; i <= episodeCount; i++) {
+    let qualities: string[] = ["1080p", "720p", "480p"]
+
+    if (provider) {
+      try {
+        qualities = await provider.getAvailableQualities(animeId, i)
+      } catch (e) {
+        console.error(`Failed to get qualities for episode ${i}:`, e)
+      }
+    }
+
+    const sources: Record<string, string> = {}
+    for (const quality of qualities) {
+      sources[quality] = `/api/provider/${providerName}/episode?animeId=${animeId}&episode=${i}&quality=${quality}`
+    }
+
     episodes.push({
       number: i,
       title: `Серия ${i}`,
@@ -46,16 +60,11 @@ function generateEpisodesForProvider(animeId: number, provider: string) {
       thumbnail: `/placeholder.svg?height=200&width=350&query=anime episode ${i}`,
       duration: "24:00",
       airDate: new Date(2024, 0, i).toISOString(),
-      // Для разработки возвращаем публичный MP4 для всех качеств
-      sources: {
-        "1080p": `https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`,
-        "720p": `https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`,
-        "480p": `https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`,
-      },
+      sources,
       subtitles: [
         {
           language: "ru",
-          url: `https://example.com/${provider.toLowerCase()}/anime-${animeId}/episode-${i}/ru.vtt`,
+          url: `https://example.com/${providerName}/anime-${animeId}/episode-${i}/ru.vtt`,
         },
       ],
     })
